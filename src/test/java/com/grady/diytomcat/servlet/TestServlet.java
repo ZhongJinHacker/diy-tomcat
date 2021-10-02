@@ -17,7 +17,7 @@ public class TestServlet extends DiyHttpServlet {
     @Override
     public void doPost(DiyRequest request, DiyResponse response) {
         try {
-            OutputStream outputStream=response.outputStream;
+            OutputStream outputStream = response.outputStream;
             String result = DiyResponse.responsebody + " test handle successful";
             outputStream.write(result.getBytes());
             outputStream.flush();

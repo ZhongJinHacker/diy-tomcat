@@ -13,6 +13,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.*;
 
 public class DiyTomcat {
 
@@ -22,8 +23,31 @@ public class DiyTomcat {
 
     public static final HashMap<String,String> URL_MAPPING = new HashMap<>();
 
+    private static ThreadPoolExecutor threadPoolExecutor;
+
     static {
         loadServlet();
+        initExecutors();
+    }
+
+    // 线程池化
+    private static void initExecutors() {
+        int corePoolSize = 10;
+        int maximumPoolSize = 50;
+        long keepAliveTime = 100L;
+        TimeUnit unit = TimeUnit.SECONDS;
+        BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(50);
+        ThreadFactory threadFactory = Executors.defaultThreadFactory();
+        RejectedExecutionHandler handler = new ThreadPoolExecutor.AbortPolicy();
+        threadPoolExecutor = new ThreadPoolExecutor(
+                corePoolSize,
+                maximumPoolSize,
+                keepAliveTime,
+                unit,
+                workQueue,
+                threadFactory,
+                handler
+        );
     }
 
     private static void loadServlet() {
@@ -67,9 +91,11 @@ public class DiyTomcat {
         ServerSocket serverSocket = new ServerSocket(port);
         while (true) {
             Socket socket = serverSocket.accept();
-            RequestHandler requestHandler=new RequestHandler(socket);
+            RequestHandler requestHandler = new RequestHandler(socket);
             // 一个 socket 一个线程
-            new Thread(requestHandler).start();
+            // new Thread(requestHandler).start();
+            // 使用线程组干活
+            threadPoolExecutor.execute(requestHandler);
         }
     }
 }
