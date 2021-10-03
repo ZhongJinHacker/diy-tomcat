@@ -1,15 +1,5 @@
 package com.grady.diytomcat;
 
-import com.grady.diytomcat.handler.DiyNettyTomcatHandler;
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.http.HttpRequestDecoder;
-import io.netty.handler.codec.http.HttpResponseEncoder;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.Element;
@@ -17,8 +7,15 @@ import org.dom4j.io.SAXReader;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 
 public class DiyTomcat {
@@ -29,6 +26,7 @@ public class DiyTomcat {
 
     public static final HashMap<String,String> URL_MAPPING = new HashMap<>();
 
+    private Selector selector;
 
     static {
         loadServlet();
@@ -72,37 +70,56 @@ public class DiyTomcat {
     }
 
     public void start() throws IOException {
-        // Boss线程
-        NioEventLoopGroup bossGroup = new NioEventLoopGroup();
-        // worker线程
-        NioEventLoopGroup workerGroup = new NioEventLoopGroup();
+        selector = Selector.open();
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        serverSocketChannel.configureBlocking(false);
+        InetSocketAddress inetSocketAddress = new InetSocketAddress(port);
+        // 绑定本地端口
+        serverSocketChannel.socket().bind(inetSocketAddress);
+        // serverSocketChannel 仅注册accept事件
+        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-        // 1.创建对象
-        ServerBootstrap server = new ServerBootstrap();
-        //2. 配置参数
-        server.group(bossGroup,workerGroup)
-                // 主线程处理类
-                .channel(NioServerSocketChannel.class)
-                // 子线程处理类 Handler
-                .childHandler(new ChannelInitializer<SocketChannel>() {
-                    protected void initChannel(SocketChannel socketChannel) throws Exception {
-                        socketChannel.pipeline().addLast(new HttpResponseEncoder());
-                        socketChannel.pipeline().addLast(new HttpRequestDecoder());
-                        socketChannel.pipeline().addLast(new DiyNettyTomcatHandler());
-                    }
-                })
-                //针对主线程的配置，最大线程数128
-                .option(ChannelOption.SO_BACKLOG,128)
-                // 针对子线程的配置，保持长连接
-                .childOption(ChannelOption.SO_KEEPALIVE,true);
-
-        try {
-            // 3 启动服务器
-            ChannelFuture f = server.bind(port).sync();
-            System.out.println("DiyTomcat启动成功，监听的端口是：" + port);
-            f.channel().closeFuture().sync();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        while (true) {
+            this.selector.select();
+            Iterator<SelectionKey> iterator = this.selector.selectedKeys().iterator();
+            while (iterator.hasNext()) {
+                SelectionKey key = iterator.next();
+                // 这里必须删除，selector 本身不会自己删
+                iterator.remove();
+                if (key.isAcceptable()) {
+                    //客户端的连接请求事件
+                    doAccept(key);
+                } else if (key.isReadable()) {
+                    // 读以准备好事件
+                    doRead(key);
+                }
+            }
         }
+    }
+
+    private void doAccept(SelectionKey key) throws IOException {
+        ServerSocketChannel serverSocketChannel = (ServerSocketChannel) key.channel();
+        SocketChannel channel = serverSocketChannel.accept();
+        //把这个设置为非阻塞
+        channel.configureBlocking(false);
+        //注册读事件
+        channel.register(selector, SelectionKey.OP_READ);
+    }
+
+    private void doRead(SelectionKey key) throws IOException {
+        SocketChannel channel = (SocketChannel) key.channel();
+        ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
+        int bytesRead = channel.read(byteBuffer);
+        // 这里需要定制协议分开读， 这里简化版直接读出
+        String request = new String(byteBuffer.array()).trim();
+        System.out.println("客户端的请求内容" + request);
+
+
+        String responseHeader = "HTTP/1.1 200+\r\n"+"Content-Type：text/html+\r\n"
+                +"\r\n";
+        String outString = responseHeader + "OK";
+        ByteBuffer outBuffer = ByteBuffer.wrap(outString.getBytes());
+        channel.write(outBuffer);
+        channel.close();
     }
 }
