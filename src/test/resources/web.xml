@@ -6,7 +6,7 @@
 
     <servlet>
         <servlet-name>testServlet</servlet-name>
-        <servlet-class>com.grady.diytomcat.servlet.TestNettyServlet</servlet-class>
+        <servlet-class>com.grady.diytomcat.servlet.TestNioServlet</servlet-class>
     </servlet>
 
     <servlet-mapping>

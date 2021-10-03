@@ -1,5 +1,6 @@
 package com.grady.diytomcat;
 
+import com.grady.diytomcat.handler.NioRequestHandler;
 import org.dom4j.Document;
 import org.dom4j.DocumentException;
 import org.dom4j.Element;
@@ -22,7 +23,7 @@ public class DiyTomcat {
 
     private int port = 8080;
 
-    public static final HashMap<String, DiyNettyServlet> SERVLET_MAPPING = new HashMap<>();
+    public static final HashMap<String, NioServlet> SERVLET_MAPPING = new HashMap<>();
 
     public static final HashMap<String,String> URL_MAPPING = new HashMap<>();
 
@@ -49,7 +50,7 @@ public class DiyTomcat {
                     Element servletClass = element.element("servlet-class");
                     //需要注意的是servletMapping映射的第二个参数，要通过反射的方式进行实例化
                     SERVLET_MAPPING.put(servletName.getText(),
-                            (DiyNettyServlet) Class.forName(servletClass.getText().trim()).newInstance());
+                            (NioServlet) Class.forName(servletClass.getText().trim()).newInstance());
                 }else if ("servlet-mapping".equalsIgnoreCase(element.getName())){
                     Element servletName = element.element("servlet-name");
                     Element urlPattern = element.element("url-pattern");
@@ -108,18 +109,7 @@ public class DiyTomcat {
 
     private void doRead(SelectionKey key) throws IOException {
         SocketChannel channel = (SocketChannel) key.channel();
-        ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
-        int bytesRead = channel.read(byteBuffer);
-        // 这里需要定制协议分开读， 这里简化版直接读出
-        String request = new String(byteBuffer.array()).trim();
-        System.out.println("客户端的请求内容" + request);
-
-
-        String responseHeader = "HTTP/1.1 200+\r\n"+"Content-Type：text/html+\r\n"
-                +"\r\n";
-        String outString = responseHeader + "OK";
-        ByteBuffer outBuffer = ByteBuffer.wrap(outString.getBytes());
-        channel.write(outBuffer);
-        channel.close();
+        NioRequestHandler requestHandler = new NioRequestHandler(channel);
+        requestHandler.run();
     }
 }
